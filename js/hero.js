@@ -1,8 +1,9 @@
 // Hero: a stereo rig scans a moving row of tomato plants. The two camera
-// feeds are real renders from the two virtual cameras; boxes, disparity and
-// depth are computed from the scene geometry every frame.
+// feeds are real renders from the two virtual cameras; boxes are matched
+// across views and triangulated to X, Y, Z every frame.
 import * as THREE from 'three';
 import { buildPlant, rngFrom, CLASS_UI, CLASS_LABEL } from './plant.js';
+import { SENSOR_W, SENSOR_H, VFOV, BASE, toPx, triangulate, cm } from './stereo-math.js';
 
 const stage = document.getElementById('hero-stage');
 const canvas = document.getElementById('hero-canvas');
@@ -12,8 +13,10 @@ const feedEls = { L: document.getElementById('feed-L'), R: document.getElementBy
 const feedCount = { L: document.getElementById('feed-L-n'), R: document.getElementById('feed-R-n') };
 const ro = {
   id: document.getElementById('ro-id'), cls: document.getElementById('ro-class'),
-  conf: document.getElementById('ro-conf'), disp: document.getElementById('ro-disp'), z: document.getElementById('ro-z'),
+  conf: document.getElementById('ro-conf'), disp: document.getElementById('ro-disp'),
+  x: document.getElementById('ro-x'), y: document.getElementById('ro-y'), z: document.getElementById('ro-z'),
 };
+const HERO_THRESHOLD = 0.5;
 const tallyEls = { verde: document.getElementById('t-verde'), pinton: document.getElementById('t-pinton'), maduro: document.getElementById('t-maduro') };
 const copyEl = document.querySelector('.hero-copy');
 const instEl = document.querySelector('.hero-instruments');
@@ -23,9 +26,6 @@ const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ENAMEL = new THREE.Color('#1d3aa6');
 const FEED_BG = new THREE.Color('#26332c');
 
-// sensor model shared with the stereo section: 1280×960, vertical FOV 55°
-const SENSOR_W = 1280, SENSOR_H = 960, VFOV = 55, BASE = 0.12;
-const FOCAL = (SENSOR_H / 2) / Math.tan(THREE.MathUtils.degToRad(VFOV / 2));
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -126,6 +126,15 @@ const rays = new THREE.LineSegments(rayGeo, new THREE.LineBasicMaterial({ color:
 rays.renderOrder = 10;
 scene.add(rays);
 
+// X → Y → Z path from the left camera to the triangulated estimate
+const AXIS = { x: new THREE.Color('#ffffff'), y: new THREE.Color('#f5c518'), z: new THREE.Color('#8fb0ff') };
+const pathGeo = new THREE.BufferGeometry();
+pathGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(18), 3));
+pathGeo.setAttribute('color', new THREE.Float32BufferAttribute([...AXIS.x.toArray(), ...AXIS.x.toArray(), ...AXIS.y.toArray(), ...AXIS.y.toArray(), ...AXIS.z.toArray(), ...AXIS.z.toArray()], 3));
+const coordPath = new THREE.LineSegments(pathGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
+coordPath.renderOrder = 11;
+scene.add(coordPath);
+
 // 3D detection boxes pool
 const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
 const boxMats = Object.fromEntries(Object.entries(CLASS_UI).map(([k, c]) => [k, new THREE.LineBasicMaterial({ color: c })]));
@@ -135,7 +144,7 @@ function boxAt(i) {
   if (!boxPool[i]) { const b = new THREE.LineSegments(edges, boxMats.verde); b.layers.set(1); scene.add(b); boxPool.push(b); }
   return boxPool[i];
 }
-[rig, frL, frR, rays, floor, grid].forEach((o) => o.traverse((c) => c.layers.set(1)));
+[rig, frL, frR, rays, coordPath, floor, grid].forEach((o) => o.traverse((c) => c.layers.set(1)));
 
 const mainCam = new THREE.PerspectiveCamera(32, 1, 0.05, 40);
 mainCam.layers.enable(1);
@@ -200,9 +209,14 @@ function detect(time) {
       const jitter = (hash01(t.id + Math.floor(time * 3)) - 0.5) * 0.02;
       let conf = 0.95 - (t.cls === 'pinton' ? 0.1 : 0) - (t.occl ? 0.22 : 0) - t.seed * 0.06 + jitter;
       conf = Math.min(0.99, Math.max(0.41, conf));
-      const xL = (vL.x + 1) / 2 * SENSOR_W, xR = (vR.x + 1) / 2 * SENSOR_W;
-      const disp = xL - xR;
-      out.push({ t, vL, vR, rN, conf, disp, z: (FOCAL * BASE) / disp, world: tmp.clone() });
+      if (conf < HERO_THRESHOLD) continue;
+      // match the pair and triangulate the box centres → X, Y, Z (left camera frame)
+      const pL = toPx(vL), pR = toPx(vR);
+      const tri = triangulate(pL.u, pL.v, pR.u);
+      if (!tri) continue;
+      // back to world space to draw the estimate (camera looks down −z)
+      const est = new THREE.Vector3(camL.position.x + tri.X, camL.position.y + tri.Y, camL.position.z - tri.Z);
+      out.push({ t, vL, vR, rN, conf, disp: tri.d, X: tri.X, Y: tri.Y, Z: tri.Z, world: tmp.clone(), est });
       if (!seen.has(t.id)) { seen.add(t.id); tally[t.cls]++; }
     }
   }
@@ -251,7 +265,7 @@ function drawFeed(k, dets, focus, time) {
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   const secs = Math.floor(time);
   const stamp = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
-  ctx.fillText(`${k === 'L' ? 'IZQ' : 'DER'}  ${stamp}`, f.x + 8, f.y + f.h - 16);
+  ctx.fillText(`${k === 'L' ? 'IZQ' : 'DER'}  ${stamp}  umbral ${HERO_THRESHOLD.toFixed(2)}`, f.x + 8, f.y + f.h - 16);
   ctx.fillStyle = '#d6402e';
   ctx.beginPath(); ctx.arc(f.x + f.w - 12, f.y + 12, 3.5, 0, Math.PI * 2);
   if (reduce || Math.floor(time * 2) % 2 === 0) ctx.fill();
@@ -259,12 +273,14 @@ function drawFeed(k, dets, focus, time) {
 }
 
 function setReadout(d) {
-  if (!d) { ro.id.textContent = 'buscando…'; ro.cls.textContent = '—'; ro.conf.textContent = '—'; ro.disp.textContent = '—'; ro.z.textContent = '—'; return; }
+  if (!d) { ro.id.textContent = 'buscando…'; ro.cls.textContent = '—'; ro.conf.textContent = '—'; ro.disp.textContent = '—'; ro.x.textContent = ro.y.textContent = ro.z.textContent = '—'; return; }
   ro.id.textContent = `T-${String(d.t.id).padStart(4, '0')}`;
   ro.cls.innerHTML = `<i style="background:${CLASS_UI[d.t.cls]}"></i>${CLASS_LABEL[d.t.cls]}`;
   ro.conf.textContent = d.conf.toFixed(2);
   ro.disp.textContent = `${d.disp.toFixed(1)} px`;
-  ro.z.textContent = `${(d.z * 100).toFixed(1)} cm`;
+  ro.x.textContent = cm(d.X);
+  ro.y.textContent = cm(d.Y);
+  ro.z.textContent = cm(d.Z);
 }
 
 // ---- loop ----
@@ -320,7 +336,12 @@ function frame() {
     a.setXYZ(2, camR.position.x, camR.position.y, camR.position.z);
     a.setXYZ(3, focus.world.x, focus.world.y, focus.world.z);
     a.needsUpdate = true;
+    const o = camL.position, q = pathGeo.attributes.position;
+    const p1 = [o.x + focus.X, o.y, o.z], p2 = [p1[0], o.y + focus.Y, o.z], p3 = [p2[0], p2[1], o.z - focus.Z];
+    [[o.x, o.y, o.z], p1, p1, p2, p2, p3].forEach((p, i) => q.setXYZ(i, ...p));
+    q.needsUpdate = true;
   }
+  coordPath.visible = rays.visible;
 
   // main view
   renderer.setScissorTest(false);

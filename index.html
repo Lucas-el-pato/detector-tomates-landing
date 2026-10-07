@@ -39,6 +39,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <nav aria-label="Secciones">
     <ul>
       <li><a href="#estereo">Estéreo</a></li>
+      <li><a href="#umbral">Umbral</a></li>
       <li><a href="#pipeline">Pipeline</a></li>
       <li><a href="#resultados">Resultados</a></li>
       <li><a href="#limites">Límites</a></li>
@@ -81,7 +82,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div><dt>Clase</dt><dd id="ro-class">—</dd></div>
         <div><dt>Confianza</dt><dd class="mono" id="ro-conf">—</dd></div>
         <div><dt>Disparidad</dt><dd class="mono" id="ro-disp">—</dd></div>
-        <div><dt>Profundidad Z</dt><dd class="mono" id="ro-z">—</dd></div>
+      </dl>
+      <dl class="readout-xyz" aria-label="Posición estimada desde la cámara izquierda, en centímetros">
+        <div><dt>X <span>cm</span></dt><dd class="mono" id="ro-x">—</dd></div>
+        <div><dt>Y <span>cm</span></dt><dd class="mono" id="ro-y">—</dd></div>
+        <div><dt>Z <span>cm</span></dt><dd class="mono" id="ro-z">—</dd></div>
       </dl>
       <div class="tally" aria-label="Conteo por madurez en esta pasada">
         <span class="tally-item" data-k="verde"><i></i>Verde <b class="mono" id="t-verde">0</b></span>
@@ -183,6 +188,55 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
 </section>
 
+<section class="band enamel" id="umbral" aria-labelledby="umbral-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="umbral-title">Cada tomate, en X, Y y Z</h2>
+      <p class="lede">El detector propone candidatos con una confianza. Mové el umbral: si es alto se pierden tomates; si es bajo entran hojas confundidas con frutos. Cada candidato aceptado se empareja entre las dos cámaras y se triangula a una posición en centímetros.</p>
+    </div>
+    <div class="thr-lab">
+      <div class="thr-stage">
+        <canvas id="thr-canvas" role="img" aria-label="Escena 3D con las detecciones aceptadas según el umbral y sus coordenadas X, Y, Z; los datos están en la tabla siguiente"></canvas>
+        <div class="thr-tip mono" id="thr-tip" hidden></div>
+        <span class="hint mono">Arrastrar · girar · tocar una caja</span>
+      </div>
+      <div class="thr-panel">
+        <label class="slider thr-slider">
+          <span class="slider-label">Umbral de confianza <output class="mono" id="thr-out">0,50</output></span>
+          <input type="range" id="thr-in" min="5" max="95" value="50" step="1">
+        </label>
+        <div class="thr-actions">
+          <button type="button" class="btn btn-yellow" id="thr-play" aria-pressed="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+            <span>Barrer umbral</span>
+          </button>
+          <button type="button" class="btn btn-ghost" id="thr-best">Ir al mejor F1</button>
+        </div>
+        <dl class="spec thr-metrics">
+          <div><dt>Candidatos aceptados</dt><dd class="mono" id="m-acc">—</dd></div>
+          <div><dt>Tomates bien detectados</dt><dd class="mono" id="m-tp">—</dd></div>
+          <div><dt>Hojas tomadas por tomate</dt><dd class="mono" id="m-fp">—</dd></div>
+          <div><dt>Tomates perdidos</dt><dd class="mono" id="m-fn">—</dd></div>
+          <div><dt>Precisión · Exhaustividad</dt><dd class="mono" id="m-pr">—</dd></div>
+          <div><dt>F1</dt><dd class="mono" id="m-f1">—</dd></div>
+        </dl>
+        <figure class="pr">
+          <figcaption>Precisión contra exhaustividad al variar el umbral</figcaption>
+          <svg id="thr-pr" viewBox="0 0 320 190" role="img" aria-label="Curva de precisión y exhaustividad con el punto del umbral actual"></svg>
+        </figure>
+      </div>
+    </div>
+    <div class="thr-table-wrap">
+      <table class="thr-table" id="thr-table">
+        <caption>Detecciones aceptadas · posición estimada desde la cámara izquierda, en centímetros (X derecha, Y arriba, Z hacia la planta)</caption>
+        <thead><tr><th scope="col">ID</th><th scope="col">Clase predicha</th><th scope="col">Conf.</th><th scope="col">X</th><th scope="col">Y</th><th scope="col">Z</th><th scope="col">Error 3D</th><th scope="col">Qué era</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="synthetic-tag">Escena y confianzas sintéticas · la triangulación es la real, con ±0,7 px de ruido en los centros de caja</p>
+  </div>
+</section>
+
 <section class="band steel" id="resultados" aria-labelledby="resultados-title">
   <div class="wrap">
     <div class="section-head">
@@ -280,6 +334,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <script type="module" src="js/hero.js"></script>
 <script type="module" src="js/stereo.js"></script>
 <script type="module" src="js/cloud.js"></script>
+<script type="module" src="js/threshold.js"></script>
 <script type="module" src="js/charts.js"></script>
 <script type="module" src="js/confusion.js"></script>
 </body>

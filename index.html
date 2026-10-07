@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DTE-2 · Detector de Tomates Estéreo</title>
+  <meta name="description" content="Proyecto de Inteligencia Artificial (FIUNA): visión estereoscópica con dos cámaras para detectar tomates en la planta, clasificar su madurez y ubicarlos en 3D.">
+  <meta name="theme-color" content="#1d3aa6">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wdth,wght@75..112.5,300..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+<!--
+THESIS: La página es el instrumento: un par estéreo que barre una hilera de tomateras, detecta, clasifica y triangula a la vista. Rechaza la landing de IA oscura con neón y tarjetas de íconos.
+OWN-WORLD: Esmalte azul ultramar de maquinaria agrícola, paneles de acero claro, amarillo de seguridad, placas de identificación remachadas, lecturas en mono de instrumento, tablero de calibración como motivo. Rojo/ámbar/verde reservados a la madurez.
+STORY: El evaluador entiende qué hace (ver + ubicar tomates en 3D), cómo (estéreo, YOLO, triangulación), cuán bien (métricas honestas y límites) y abre el código.
+FIRST VIEWPORT: Escena 3D a sangre del robot con dos cámaras recorriendo la hilera; titular a la izquierda; dos monitores CAM IZQ/DER con cajas y profundidad abajo a la derecha; CTA principal bajo el titular.
+FORM: Línea de inspección industrial adaptada a estéreo en planta, candidato 3 de 7, semilla 746b12df.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<a class="skip" href="#contenido">Saltar al contenido</a>
+
+<header class="plate-nav" id="top">
+  <a class="plate" href="#top" aria-label="DTE-2, inicio">
+    <svg class="plate-mark" viewBox="0 0 40 24" aria-hidden="true"><rect x="1" y="3" width="38" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="28" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="28" cy="12" r="1.6" fill="currentColor"/></svg>
+    <span class="plate-text"><strong>DTE-2</strong><span>Detector de Tomates Estéreo</span></span>
+  </a>
+  <nav aria-label="Secciones">
+    <ul>
+      <li><a href="#estereo">Estéreo</a></li>
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#resultados">Resultados</a></li>
+      <li><a href="#limites">Límites</a></li>
+      <li><a href="#equipo">Equipo</a></li>
+    </ul>
+  </nav>
+  <a class="btn btn-plate" href="https://github.com/Lucas-el-pato/detector-tomates-landing" rel="noopener">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    Código
+  </a>
+</header>
+
+<main id="contenido">
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-stage" id="hero-stage">
+    <canvas id="hero-canvas" aria-label="Simulación 3D: robot con dos cámaras recorre una hilera de tomateras y detecta los frutos" role="img"></canvas>
+    <canvas id="hero-overlay" aria-hidden="true"></canvas>
+  </div>
+
+  <div class="hero-copy">
+    <h1 id="hero-title">Encontrar cada tomate en la planta y saber dónde está.</h1>
+    <p class="lede">Dos cámaras, un detector neuronal y geometría epipolar. El sistema reconoce los tomates sobre la mata, clasifica su madurez y calcula su posición en 3D para guiar la cosecha.</p>
+    <div class="hero-actions">
+      <a class="btn btn-yellow" href="#estereo">Ver cómo funciona
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="btn btn-ghost" href="#resultados">Resultados</a>
+    </div>
+  </div>
+
+  <div class="hero-instruments">
+    <div class="feeds">
+      <figure class="feed" data-cam="L"><div class="feed-view" id="feed-L"></div><figcaption><span>CAM IZQ</span><span class="mono" id="feed-L-n">0 det.</span></figcaption></figure>
+      <figure class="feed" data-cam="R"><div class="feed-view" id="feed-R"></div><figcaption><span>CAM DER</span><span class="mono" id="feed-R-n">0 det.</span></figcaption></figure>
+    </div>
+    <div class="readout" aria-live="off">
+      <div class="readout-head"><span>Objetivo</span><span class="mono" id="ro-id">—</span></div>
+      <dl class="readout-grid">
+        <div><dt>Clase</dt><dd id="ro-class">—</dd></div>
+        <div><dt>Confianza</dt><dd class="mono" id="ro-conf">—</dd></div>
+        <div><dt>Disparidad</dt><dd class="mono" id="ro-disp">—</dd></div>
+        <div><dt>Profundidad Z</dt><dd class="mono" id="ro-z">—</dd></div>
+      </dl>
+      <div class="tally" aria-label="Conteo por madurez en esta pasada">
+        <span class="tally-item" data-k="verde"><i></i>Verde <b class="mono" id="t-verde">0</b></span>
+        <span class="tally-item" data-k="pinton"><i></i>Pintón <b class="mono" id="t-pinton">0</b></span>
+        <span class="tally-item" data-k="maduro"><i></i>Maduro <b class="mono" id="t-maduro">0</b></span>
+      </div>
+    </div>
+  </div>
+  <p class="synthetic-tag hero-tag">Simulación ilustrativa · números calculados en vivo desde la escena</p>
+</section>
+
+<section class="band steel" id="problema" aria-labelledby="problema-title">
+  <div class="wrap split">
+    <h2 id="problema-title">Una foto dice <em>qué</em> hay. Dos fotos dicen <em>dónde</em>.</h2>
+    <div class="prose">
+      <p>Un detector entrenado sobre una sola cámara puede marcar un tomate maduro, pero no sabe si está a 40 centímetros o a un metro y medio. Para que un brazo robótico lo coseche, o para estimar el rendimiento de una hilera, esa distancia es el dato que importa.</p>
+      <p>Con dos cámaras separadas una distancia conocida, el mismo tomate aparece corrido unos píxeles entre una imagen y la otra. Ese corrimiento, la <strong>disparidad</strong>, se convierte en profundidad con una sola división. El trabajo del proyecto es hacer que esa cadena funcione dentro de una planta real: hojas que tapan, luz que cambia y frutos que se parecen entre sí.</p>
+    </div>
+  </div>
+  <div class="wrap ripeness" aria-labelledby="madurez-title">
+    <h3 id="madurez-title">Tres estados de madurez</h3>
+    <ol class="ripe-scale">
+      <li data-k="verde"><span class="swatch"></span><strong>Verde</strong><span>Fruto formado, sin viraje de color. No se cosecha.</span></li>
+      <li data-k="pinton"><span class="swatch"></span><strong>Pintón</strong><span>Viraje parcial a naranja. Cosecha para transporte largo.</span></li>
+      <li data-k="maduro"><span class="swatch"></span><strong>Maduro</strong><span>Rojo en más del 90 % de la superficie. Cosecha inmediata.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band enamel" id="estereo" aria-labelledby="estereo-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="estereo-title">La profundidad sale de una división</h2>
+      <p class="lede">Movés el tomate y la base entre cámaras; el diagrama recalcula la disparidad y el error esperado con la fórmula real del par estéreo rectificado.</p>
+    </div>
+    <div class="stereo-lab">
+      <div class="stereo-figure">
+        <svg id="stereo-svg" viewBox="0 0 640 420" role="img" aria-labelledby="stereo-svg-title">
+          <title id="stereo-svg-title">Vista superior del par estéreo: dos cámaras separadas por la base B observan un tomate a profundidad Z.</title>
+        </svg>
+      </div>
+      <div class="stereo-controls">
+        <div class="formula" aria-label="Z igual a f por B dividido d">
+          <span class="var">Z</span><span class="op">=</span><span class="frac"><span>f · B</span><span>d</span></span>
+        </div>
+        <label class="slider">
+          <span class="slider-label">Distancia al tomate <output class="mono" id="out-z">0,90 m</output></span>
+          <input type="range" id="in-z" min="30" max="200" value="90" step="1">
+        </label>
+        <label class="slider">
+          <span class="slider-label">Base entre cámaras <output class="mono" id="out-b">12 cm</output></span>
+          <input type="range" id="in-b" min="4" max="24" value="12" step="1">
+        </label>
+        <dl class="spec">
+          <div><dt>Focal f</dt><dd class="mono">922 px</dd></div>
+          <div><dt>Disparidad d</dt><dd class="mono" id="calc-d">—</dd></div>
+          <div><dt>Error de profundidad con ±0,5 px</dt><dd class="mono" id="calc-err">—</dd></div>
+        </dl>
+        <p class="note">El error crece con el cuadrado de la distancia: duplicar Z cuadruplica la incertidumbre. Por eso el robot trabaja a menos de un metro de la planta.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band steel" id="pipeline" aria-labelledby="pipeline-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="pipeline-title">De dos imágenes a una coordenada</h2>
+      <p class="lede">Cada cuadro recorre seis estaciones. Las tres primeras se preparan una vez; las tres últimas corren en cada captura.</p>
+    </div>
+    <ol class="line">
+      <li class="station"><span class="tag">CAP</span><h3>Captura sincronizada</h3><p>Dos cámaras de 1280×960 disparadas por la misma señal, montadas en una barra rígida a 12 cm.</p></li>
+      <li class="station"><span class="tag">CAL</span><h3>Calibración</h3><p>Tablero de ajedrez en 30 poses. OpenCV estima intrínsecos, distorsión y la rotación entre cámaras.</p></li>
+      <li class="station"><span class="tag">REC</span><h3>Rectificación</h3><p>Se reproyectan ambas imágenes para que las líneas epipolares queden horizontales: un punto busca su par en la misma fila.</p></li>
+      <li class="station run"><span class="tag">DET</span><h3>Detección</h3><p>YOLOv8s ajustado con imágenes propias marca cajas y madurez en cada vista.</p></li>
+      <li class="station run"><span class="tag">EMP</span><h3>Emparejamiento</h3><p>Las cajas izquierda y derecha se emparejan por fila, clase y similitud de recorte.</p></li>
+      <li class="station run"><span class="tag">TRI</span><h3>Triangulación</h3><p>La disparidad del centro de cada par da Z; con la calibración se obtienen X e Y en metros.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band ink" id="nube" aria-labelledby="nube-title">
+  <div class="wrap cloud-layout">
+    <div class="cloud-copy">
+      <h2 id="nube-title">La planta, reconstruida punto por punto</h2>
+      <p>El mapa de disparidad de toda la imagen se convierte en una nube de puntos. Encima, los tomates detectados quedan ubicados como esferas con su clase. Arrastrá para girarla.</p>
+      <div class="legend" aria-label="Leyenda de la nube">
+        <span class="depth-ramp"><span>cerca</span><i></i><span>lejos</span></span>
+        <span class="tally-item" data-k="verde"><i></i>Verde</span>
+        <span class="tally-item" data-k="pinton"><i></i>Pintón</span>
+        <span class="tally-item" data-k="maduro"><i></i>Maduro</span>
+      </div>
+      <p class="synthetic-tag">Nube sintética de demostración</p>
+    </div>
+    <div class="cloud-stage">
+      <canvas id="cloud-canvas" role="img" aria-label="Nube de puntos 3D de una tomatera con tomates detectados resaltados"></canvas>
+      <span class="hint mono">Arrastrar · girar</span>
+    </div>
+  </div>
+</section>
+
+<section class="band steel" id="resultados" aria-labelledby="resultados-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="resultados-title">Resultados</h2>
+      <p class="lede">Evaluado sobre 412 imágenes estéreo que el modelo nunca vio, tomadas en otro invernadero y otra semana que las de entrenamiento.</p>
+      <p class="synthetic-tag">Datos ilustrativos · reemplazar por los resultados reales del proyecto</p>
+    </div>
+
+    <dl class="nameplate">
+      <div><dt>Modelo</dt><dd>YOLOv8s</dd></div>
+      <div><dt>mAP@0,5</dt><dd class="mono">0,891</dd></div>
+      <div><dt>mAP@0,5:0,95</dt><dd class="mono">0,642</dd></div>
+      <div><dt>Error Z a 0,8 m</dt><dd class="mono">±1,3 cm</dd></div>
+      <div><dt>Velocidad</dt><dd class="mono">24 par/s</dd></div>
+      <div><dt>Imágenes</dt><dd class="mono">2 870 pares</dd></div>
+    </dl>
+
+    <div class="charts">
+      <figure class="chart-card wide">
+        <figcaption><h3>Entrenamiento</h3><p>Pérdida de caja por época. La validación se estabiliza cerca de la época 70; se usó la mejor por mAP.</p></figcaption>
+        <div class="chart" id="chart-loss"></div>
+      </figure>
+      <figure class="chart-card">
+        <figcaption><h3>mAP@0,5 en validación</h3><p>Por época, sobre el conjunto de validación.</p></figcaption>
+        <div class="chart" id="chart-map"></div>
+      </figure>
+      <figure class="chart-card">
+        <figcaption><h3>Precisión por clase</h3><p>Pintón es la clase difícil: está a mitad de camino entre las otras dos.</p></figcaption>
+        <div class="chart" id="chart-class"></div>
+      </figure>
+      <figure class="chart-card wide">
+        <figcaption><h3>Error de profundidad según distancia</h3><p>Puntos: medido con cinta contra 60 tomates marcados. Curva: lo que predice la geometría con ±2 px de error de disparidad, porque el centro de una caja no es un punto exacto.</p></figcaption>
+        <div class="chart" id="chart-depth"></div>
+      </figure>
+      <figure class="chart-card wide confusion">
+        <figcaption><h3>Matriz de confusión</h3><p>Cada columna es lo que dijo el modelo; cada fila, la etiqueta real. La altura es el número de tomates. Pasá el cursor por una barra.</p></figcaption>
+        <div class="confusion-stage">
+          <canvas id="cm-canvas" role="img" aria-label="Matriz de confusión en barras 3D; los datos están en la tabla siguiente"></canvas>
+          <div class="cm-tip mono" id="cm-tip" hidden></div>
+        </div>
+        <table class="cm-table" id="cm-table">
+          <caption>Matriz de confusión (filas: real, columnas: predicho)</caption>
+        </table>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="band enamel" id="limites" aria-labelledby="limites-title">
+  <div class="wrap split">
+    <div>
+      <h2 id="limites-title">Dónde falla</h2>
+      <p class="lede">Lo que el sistema todavía no resuelve, registrado con la misma seriedad que lo que sí.</p>
+    </div>
+    <ul class="fault-log">
+      <li><span class="code mono">F-01</span><div><h3>Oclusión por hojas</h3><p>Con más de la mitad del fruto tapado, la caja de una cámara no coincide con la de la otra y el par se descarta. Es la causa del 61 % de los tomates no detectados.</p></div></li>
+      <li><span class="code mono">F-02</span><div><h3>Racimos apretados</h3><p>Dos tomates pegados a veces se emparejan cruzados entre vistas, lo que da una profundidad intermedia falsa.</p></div></li>
+      <li><span class="code mono">F-03</span><div><h3>Sol directo</h3><p>Los reflejos sobre frutos maduros saturan el sensor y bajan la confianza; a contraluz, pintón se confunde con maduro.</p></div></li>
+      <li><span class="code mono">F-04</span><div><h3>Más de 1,5 m</h3><p>La disparidad cae debajo de 75 px y el error esperado supera los 4 cm: fuera del rango útil para un brazo cosechador.</p></div></li>
+    </ul>
+  </div>
+</section>
+
+<section class="band steel" id="equipo" aria-labelledby="equipo-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="equipo-title">Equipo</h2>
+      <p class="lede">Inteligencia Artificial · 9.º semestre · Facultad de Ingeniería, Universidad Nacional de Asunción.</p>
+    </div>
+    <ul class="crew">
+      <li><span class="badge mono">A</span><strong>Integrante 1</strong><span>Captura y calibración estéreo</span></li>
+      <li><span class="badge mono">B</span><strong>Integrante 2</strong><span>Dataset y entrenamiento</span></li>
+      <li><span class="badge mono">C</span><strong>Integrante 3</strong><span>Triangulación y evaluación</span></li>
+      <li><span class="badge mono">P</span><strong>Docente</strong><span>Cátedra de Inteligencia Artificial</span></li>
+    </ul>
+  </div>
+  <div class="wrap close">
+    <h2>El código, los datos y el informe están abiertos.</h2>
+    <div class="hero-actions">
+      <a class="btn btn-enamel" href="https://github.com/Lucas-el-pato/detector-tomates-landing" rel="noopener">Repositorio en GitHub</a>
+      <a class="btn btn-outline" href="#" aria-disabled="true" title="Pendiente: enlazar el informe">Informe (PDF, pronto)</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <span><strong>DTE-2</strong> · FIUNA · 2026</span>
+    <span>Las cifras y el equipo de esta página son ilustrativos hasta cargar los resultados reales.</span>
+  </div>
+</footer>
+
+<script type="module" src="js/hero.js"></script>
+<script type="module" src="js/stereo.js"></script>
+<script type="module" src="js/cloud.js"></script>
+<script type="module" src="js/charts.js"></script>
+<script type="module" src="js/confusion.js"></script>
+</body>
+</html>
